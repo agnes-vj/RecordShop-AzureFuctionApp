@@ -23,7 +23,7 @@ namespace InputBindingDb
         }
 
         [Function("GetAlbums")]
-        public  IActionResult Run(
+        public  IActionResult GetAllAlbums(
             [HttpTrigger(AuthorizationLevel.Function, "get", Route = "albums")] HttpRequestData req,
             FunctionContext context)
         {
