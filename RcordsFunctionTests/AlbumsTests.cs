@@ -24,7 +24,7 @@ namespace RecordsFunctionTests
         private readonly Mock<IAlbumsService> _mockAlbumsService;
         private readonly GetAlbumsFunction _function;
         private readonly DefaultHttpContext _httpContext;
-
+        Mock<FunctionContext> contextMock;
         public AlbumsTests()
         {
 
@@ -33,21 +33,23 @@ namespace RecordsFunctionTests
             _function = new GetAlbumsFunction(_mockAlbumsService.Object);
 
             _httpContext = new DefaultHttpContext();
+
+            var serviceCollection = new ServiceCollection();
+            serviceCollection.AddSingleton<ILoggerFactory, LoggerFactory>();
+            serviceCollection.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
+            var serviceProvider = serviceCollection.BuildServiceProvider();
+
+            contextMock = new Mock<FunctionContext>();
+            contextMock.SetupProperty(c => c.InstanceServices, serviceProvider);
         }
 
         [Fact]
         public void TestGetAlbumsSuccess()
         {
             //Arrange
-            var serviceCollection = new ServiceCollection();
-            serviceCollection.AddSingleton<ILoggerFactory, LoggerFactory>();
-            serviceCollection.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
-            var serviceProvider = serviceCollection.BuildServiceProvider();
 
-            var contextMock = new Mock<FunctionContext>();
-            contextMock.SetupProperty(c => c.InstanceServices, serviceProvider);
 
-            var request = new FakeHttpRequestData(contextMock.Object);
+            var request = new MockHttpRequestData(contextMock.Object);
 
             var expectedAlbums = new List<AlbumDTO>
                 {
@@ -68,12 +70,80 @@ namespace RecordsFunctionTests
             Assert.Equal(expectedAlbums.Count, returnedAlbums.Count);  
 
         }
-        
+        [Fact]
+        public void Test_GetAlbumById_Success()
+        {
+            // Arrange
+            var request = new MockHttpRequestData(contextMock.Object); ;
+
+            int albumId = 1;
+            var expectedAlbum = new AlbumDTO
+            {
+                Id = albumId,
+                Title = "Test Album",
+                ArtistName = "Test Artist",
+                MusicGenre = "Rock",
+                ReleaseYear = 2020,
+                Stock = 10
+            };
+
+            var response = (status: ExecutionStatus.SUCCESS, albumDTO: expectedAlbum);
+            _mockAlbumsService.Setup(service => service.GetAlbumById(albumId)).Returns(response);
+
+            // Act
+            var result = _function.GetAlbumById(request, contextMock.Object, albumId) as OkObjectResult;
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(200, result.StatusCode);
+            var returnedAlbum = Assert.IsType<AlbumDTO>(result.Value);
+            Assert.Equal(expectedAlbum.Id, returnedAlbum.Id);
+            Assert.Equal(expectedAlbum.Title, returnedAlbum.Title);
+        }
+
+        [Fact]
+        public void Test_GetAlbumById_NotFound()
+        {
+            // Arrange
+            var request = new MockHttpRequestData(contextMock.Object);
+
+            int albumId = 999; 
+            var response = (status: ExecutionStatus.NOT_FOUND, albumDTO: (AlbumDTO)null);
+            _mockAlbumsService.Setup(service => service.GetAlbumById(albumId)).Returns(response);
+
+            // Act
+            var result = _function.GetAlbumById(request, contextMock.Object, albumId) as NotFoundObjectResult;
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(404, result.StatusCode);
+            Assert.Equal("No Albums Found", result.Value);
+        }
+
+        [Fact]
+        public void Test_GetAlbumById_InternalServerError()
+        {
+            // Arrange
+            var request = new MockHttpRequestData(contextMock.Object); ;
+
+            int albumId = 2;
+            var response = (status: ExecutionStatus.INTERNAL_SERVER_ERROR, albumDTO: (AlbumDTO)null);
+            _mockAlbumsService.Setup(service => service.GetAlbumById(albumId)).Returns(response);
+
+            // Act
+            var result = _function.GetAlbumById(request, contextMock.Object, albumId) as ObjectResult;
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Equal(500, result.StatusCode);
+            Assert.Equal("Internal Server error", result.Value);
+        }
+
     }
     [ExcludeFromCodeCoverage]
-    public class FakeHttpResponseData : HttpResponseData
+    public class MockHttpResponseData : HttpResponseData
     {
-        public FakeHttpResponseData(FunctionContext functionContext) : base(functionContext) { }
+        public MockHttpResponseData(FunctionContext functionContext) : base(functionContext) { }
 
         public override HttpStatusCode StatusCode { get; set; } = HttpStatusCode.OK;
         public override HttpHeadersCollection Headers { get; set; } = new HttpHeadersCollection();
@@ -81,9 +151,9 @@ namespace RecordsFunctionTests
         public override HttpCookies Cookies { get; }
     }
     [ExcludeFromCodeCoverage]
-    public class FakeHttpRequestData : HttpRequestData
+    public class MockHttpRequestData : HttpRequestData
     {
-        public FakeHttpRequestData(FunctionContext functionContext) : base(functionContext)
+        public MockHttpRequestData(FunctionContext functionContext) : base(functionContext)
         {
 
         }
@@ -95,7 +165,7 @@ namespace RecordsFunctionTests
         public override string Method { get; }
         public override HttpResponseData CreateResponse()
         {
-            return new FakeHttpResponseData(FunctionContext);
+            return new MockHttpResponseData(FunctionContext);
         }
     }
 }
