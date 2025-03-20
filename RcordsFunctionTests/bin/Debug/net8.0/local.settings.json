@@ -1,9 +1,0 @@
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "SqlConnectionString": "Server=.\\SQLEXPRESS;Database=RecordShopDB;User Id=sa;Password=Password@123;Trust Server Certificate=True",
-    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
-  },
-  "ConnectionStrings": {}
-}
