@@ -7,6 +7,9 @@ using Microsoft.Azure.Functions.Worker.Extensions.Sql;
 using Microsoft.Azure.Functions.Worker.Extensions.Storage;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using Azure.Storage.Queues.Models;
+using Newtonsoft.Json.Linq;
+using System.Text.Json.Nodes;
 
 namespace InputBindingDb
 {
@@ -51,29 +54,53 @@ namespace InputBindingDb
         }
 
         [Function("AddAlbum")]
-        [SqlOutput("Albums", "SqlConnectionString")] 
-        [QueueOutput("album-logs", Connection = "AzureWebJobsStorage")]
-        public static (AlbumDTO, string) AddAlbum(
-                [HttpTrigger(AuthorizationLevel.Function, "post", Route = "albums")] HttpRequestData req,
+        public static  async Task<OutputType> AddAlbum(
+                        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "addalbums")] HttpRequestData req,
+                        [FromQuery] string artistName,
+                        [SqlInput("SELECT COUNT(*) AS ArtistCount FROM Artists WHERE Name = @ArtistName",
+                                  "SqlConnectionString",
+                                  parameters: "@ArtistName={artistName}")] string artistExistsStr
 
-                [SqlInput("SELECT COUNT(*) FROM Artists WHERE Name = @ArtistName",
-                          "SqlConnectionString",
-                          parameters: "@ArtistName={artistName}")] int artistExists            
-               )
+                    )
         {
-            string requestBody = new StreamReader(req.Body).ReadToEnd();
-            AlbumDTO newAlbum = JsonSerializer.Deserialize<AlbumDTO>(requestBody);
-            
+
+            JsonNode artistExistsNode = JsonNode.Parse(artistExistsStr);
+
+            // Convert the JsonNode to JsonArray (assuming it's an array)
+            JsonArray artistExistsArray = artistExistsNode.AsArray();
+
+            // Access the first element of the array (which should be a JsonObject)
+            JsonObject artistExistsObject = artistExistsArray[0].AsObject();
+
+            // Extract the 'ArtistCount' property from the JsonObject
+            int artistExists = artistExistsObject["ArtistCount"].GetValue<int>();
+            Console.WriteLine($"!!!!!!!!!!!!!!!!!{artistName} {artistExistsStr}  {artistExists}");
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync(); 
+            Album newAlbum = JsonSerializer.Deserialize<Album>(requestBody);
 
             if (artistExists == 0)
             {
-                return (null, null);  
+                return new OutputType()
+                {
+                    addedAlbum = newAlbum,
+
+                    HttpResponse = req.CreateResponse(System.Net.HttpStatusCode.NotModified)
+                };
             }
+            return new OutputType()
+            {
+                addedAlbum = newAlbum,
 
-            string queueMessage = $"New album '{newAlbum.Title}' by '{newAlbum.ArtistName}' added on {DateTime.UtcNow}.";
-
-            return (newAlbum, queueMessage);  
+                HttpResponse = req.CreateResponse(System.Net.HttpStatusCode.Created)
+            };
         }
+
+    }
+    public  class OutputType
+    {
+        [SqlOutput("Albums", "SqlConnectionString")]
+        public  Album addedAlbum { get; set; }
+        public  HttpResponseData HttpResponse { get; set; }
 
     }
 }
